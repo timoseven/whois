@@ -43,8 +43,8 @@ document.addEventListener('DOMContentLoaded', function() {
         
         showLoading();
         
-        // 调用后端API
-        fetch('http://localhost:5001/api/whois', {
+        // 调用后端API - 使用相对路径以便部署在服务器上时调用内部API
+        fetch('/api/whois', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'

@@ -1,9 +1,14 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 import whois
 import re
+import os
 
-app = Flask(__name__)
+# 创建Flask应用，设置静态文件夹路径为前端目录
+app = Flask(__name__, 
+            static_folder='../frontend',
+            static_url_path='/'
+)
 CORS(app)  # 启用CORS支持所有跨域请求
 
 # 简单的域名格式验证
@@ -87,6 +92,11 @@ def format_whois_result(whois_data):
 @app.route('/health', methods=['GET'])
 def health_check():
     return jsonify({'status': 'healthy'})
+
+# 根路径路由 - 提供前端index.html页面
+@app.route('/', methods=['GET'])
+def index():
+    return send_from_directory(app.static_folder, 'index.html')
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5001)

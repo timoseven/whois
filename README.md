@@ -22,9 +22,9 @@
 whois/
 ├── frontend/           # 前端代码
 │   ├── index.html      # 主页面
-│   └── app.js          # JavaScript逻辑
+│   └── app.js          # JavaScript逻辑（使用相对路径调用API）
 ├── backend/            # 后端代码
-│   ├── app.py          # Flask应用
+│   ├── app.py          # Flask应用（集成静态文件服务）
 │   └── requirements.txt # Python依赖
 ├── .gitignore          # Git忽略文件
 └── README.md           # 项目说明
@@ -64,15 +64,35 @@ pip install -r requirements.txt
 
 ## 使用方法
 
-1. 启动后端服务
+### 部署模式（推荐用于服务器部署）
+
+1. 进入后端目录并激活虚拟环境
 ```bash
 cd whois/backend
+source venv/bin/activate  # 或 venv\Scripts\activate (Windows)
+```
+
+2. 启动集成了静态文件服务的Flask应用
+```bash
+python app.py
+```
+
+3. 在浏览器中访问应用
+   - 直接访问 http://服务器IP:5001
+   - 前端页面和API都由同一服务提供
+
+### 开发模式（前后端分离）
+
+1. 启动后端API服务
+```bash
+cd whois/backend
+source venv/bin/activate  # 或 venv\Scripts\activate (Windows)
 python app.py
 ```
 
 2. 打开前端页面
    - 直接在浏览器中打开 `whois/frontend/index.html` 文件
-   - 或者使用任何静态文件服务器托管前端文件
+   - 或使用任何静态文件服务器托管前端文件
 
 3. 在输入框中输入域名（例如：example.com），然后点击查询按钮或按回车键
 
@@ -91,10 +111,23 @@ python app.py
 
 ## 注意事项
 
-- 后端服务默认运行在 http://localhost:5000
+- 服务默认运行在 http://服务器IP:5001
 - 确保Python版本 >= 3.6
 - 某些域名可能由于隐私保护设置无法获取完整的WHOIS信息
 - 查询历史仅保存在浏览器本地，清除浏览器数据会导致历史记录丢失
+- 部署到生产环境时，建议使用Gunicorn或uWSGI等WSGI服务器，而不是Flask的开发服务器
+
+### 生产环境部署示例
+
+使用Gunicorn部署：
+```bash
+# 安装Gunicorn
+pip install gunicorn
+
+# 启动服务
+cd whois/backend
+gunicorn -w 4 -b 0.0.0.0:5001 app:app
+```
 
 ## 许可证
 
