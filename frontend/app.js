@@ -284,7 +284,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // 批量查询API
     async function queryDomainBatch(domains) {
-        const response = await fetch('/api/whois-batch', {
+        const response = await fetch('/whois/api/whois-batch', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -565,7 +565,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // 检查后端服务是否正常运行
     async function checkBackendHealth() {
         try {
-            const response = await fetch('/health');
+            const response = await fetch('/whois/health');
             if (!response.ok) {
                 throw new Error('后端服务不可用');
             }

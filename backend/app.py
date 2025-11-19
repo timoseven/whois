@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, redirect
 import os
 import whois
 import re
@@ -6,7 +6,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 # 创建Flask应用
-app = Flask(__name__, static_folder='../frontend', static_url_path='/')
+app = Flask(__name__, static_folder='../frontend', static_url_path='/whois')
 # 不需要CORS，因为前后端在同一端口
 
 # 简单的域名格式验证
@@ -63,7 +63,7 @@ def check_domain_availability(domain):
         return False
 
 # WHOIS查询API端点（单个域名）
-@app.route('/api/whois', methods=['POST'])
+@app.route('/whois/api/whois', methods=['POST'])
 def whois_query():
     try:
         data = request.get_json()
@@ -95,7 +95,7 @@ def whois_query():
         return jsonify({'error': f'服务器错误: {str(e)}'}), 500
 
 # 批量WHOIS查询API端点
-@app.route('/api/whois-batch', methods=['POST'])
+@app.route('/whois/api/whois-batch', methods=['POST'])
 def whois_batch_query():
     try:
         data = request.get_json()
@@ -185,24 +185,29 @@ def format_whois_result(whois_data):
     return '\n'.join(result_lines) if result_lines else '未找到WHOIS信息'
 
 # 健康检查端点
-@app.route('/health', methods=['GET'])
+@app.route('/whois/health', methods=['GET'])
 def health_check():
     return jsonify({'status': 'healthy'})
 
 # 首页路由，提供index.html
-@app.route('/')
+@app.route('/whois/')
 def index():
     return app.send_static_file('index.html')
 
 # 处理其他静态文件
-@app.route('/<path:path>')
+@app.route('/whois/<path:path>')
 def static_files(path):
     if path.endswith(('.js', '.css', '.html', '.json', '.png', '.jpg', '.jpeg', '.gif', '.ico')):
         return app.send_static_file(path)
     else:
         return app.send_static_file('index.html')  # SPA路由支持
 
+# 根路径重定向到whois子路径
+@app.route('/')
+def root():
+    return redirect('/whois/')
+
 if __name__ == '__main__':
     # 使用8000端口作为统一访问端口
-    print("服务启动在: http://localhost:8000")
+    print("服务启动在: http://localhost:8000/whois")
     app.run(debug=True, host='0.0.0.0', port=8000)
