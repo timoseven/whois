@@ -2,3 +2,5 @@ flask
 python-dotenv
 python-whois
 flask-cors
+flask-talisman
+flask-limiter
