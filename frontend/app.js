@@ -187,9 +187,16 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
         
-        combinationsList.innerHTML = generatedDomains.map(domain => 
-            `<div class="domain-item">${domain}</div>`
-        ).join('');
+        // 清空现有内容
+        combinationsList.innerHTML = '';
+        
+        // 使用安全的DOM操作添加元素
+        generatedDomains.forEach(domain => {
+            const div = document.createElement('div');
+            div.className = 'domain-item';
+            div.textContent = domain; // 使用textContent而不是innerHTML
+            combinationsList.appendChild(div);
+        });
         
         // 更新统计信息
         const combinationsDiv = document.getElementById('combinations');
@@ -303,8 +310,14 @@ document.addEventListener('DOMContentLoaded', function() {
     function displayResults() {
         const domainCount = Object.keys(queryResults).length;
         
+        // 清空现有内容
+        resultsContent.innerHTML = '';
+        
         if (domainCount === 0) {
-            resultsContent.innerHTML = '<p class="no-results">暂无查询结果</p>';
+            const p = document.createElement('p');
+            p.className = 'no-results';
+            p.textContent = '暂无查询结果';
+            resultsContent.appendChild(p);
             return;
         }
         
@@ -317,121 +330,215 @@ document.addEventListener('DOMContentLoaded', function() {
             return a.length - b.length;
         });
         
-        const resultsHTML = domains.map(domain => {
+        // 创建结果列表容器
+        const resultsHeader = document.createElement('div');
+        resultsHeader.className = 'results-header';
+        const h3 = document.createElement('h3');
+        h3.textContent = `查询结果 (${domainCount})`;
+        resultsHeader.appendChild(h3);
+        resultsContent.appendChild(resultsHeader);
+        
+        const resultsList = document.createElement('div');
+        resultsList.className = 'results-list';
+        
+        domains.forEach(domain => {
             const result = queryResults[domain];
-            let statusHTML, icon;
+            let statusText, icon;
             
             if (result.error) {
-                statusHTML = `<span class="status error">${result.error}</span>`;
+                statusText = '查询失败';
                 icon = '❌';
             } else if (result.available) {
-                statusHTML = '<span class="status available">可注册</span>';
+                statusText = '可注册';
                 icon = '✅';
-                // 添加复制按钮给可注册域名
-                return `
-                    <div class="result-item">
-                        <div class="result-content">
-                            <span class="status-icon">${icon}</span>
-                            <div class="domain">${domain}</div>
-                            <div class="status">${statusHTML}</div>
-                        </div>
-                        <button class="copy-btn" onclick="copyToClipboard('${domain}')">复制</button>
-                    </div>
-                `;
             } else {
-                statusHTML = '<span class="status registered">已注册</span>';
+                statusText = '已注册';
                 icon = '❌';
             }
             
-            return `
-                <div class="result-item">
-                    <div class="result-content">
-                        <span class="status-icon">${icon}</span>
-                        <div class="domain">${domain}</div>
-                        <div class="status">${statusHTML}</div>
-                    </div>
-                </div>
-            `;
-        }).join('');
+            // 创建结果项
+            const resultItem = document.createElement('div');
+            resultItem.className = 'result-item';
+            
+            // 创建结果内容
+            const resultContent = document.createElement('div');
+            resultContent.className = 'result-content';
+            
+            // 添加图标
+            const statusIcon = document.createElement('span');
+            statusIcon.className = 'status-icon';
+            statusIcon.textContent = icon;
+            resultContent.appendChild(statusIcon);
+            
+            // 添加域名
+            const domainDiv = document.createElement('div');
+            domainDiv.className = 'domain';
+            domainDiv.textContent = domain;
+            resultContent.appendChild(domainDiv);
+            
+            // 添加状态
+            const statusDiv = document.createElement('div');
+            statusDiv.className = `status ${result.error ? 'error' : result.available ? 'available' : 'registered'}`;
+            statusDiv.textContent = statusText;
+            resultContent.appendChild(statusDiv);
+            
+            resultItem.appendChild(resultContent);
+            
+            // 如果是可注册域名，添加复制按钮
+            if (result.available) {
+                const copyBtn = document.createElement('button');
+                copyBtn.className = 'copy-btn';
+                copyBtn.textContent = '复制';
+                copyBtn.addEventListener('click', () => copyToClipboard(domain));
+                resultItem.appendChild(copyBtn);
+            }
+            
+            resultsList.appendChild(resultItem);
+        });
         
-        resultsContent.innerHTML = `
-            <div class="results-header">
-                <h3>查询结果 (${domainCount})</h3>
-            </div>
-            <div class="results-list">
-                ${resultsHTML}
-            </div>
-        `;
+        resultsContent.appendChild(resultsList);
     }
     
     // 显示可注册的域名和错误域名
     function displayAvailableDomains(availableDomains, errorDomains = []) {
+        // 清空现有内容
+        availableList.innerHTML = '';
+        
         // 显示可注册域名
         if (availableDomains.length === 0) {
-            availableList.innerHTML = '<p class="no-results">没有找到可注册的域名</p>';
+            const p = document.createElement('p');
+            p.className = 'no-results';
+            p.textContent = '没有找到可注册的域名';
+            availableList.appendChild(p);
         } else {
             // 按长度排序
             availableDomains.sort((a, b) => a.length - b.length);
             
-            const listHTML = availableDomains.map(domain => `
-                <div class="domain-item">
-                    <span class="domain-name">${domain}</span>
-                    <span class="status available">可注册</span>
-                    <button class="copy-btn" onclick="copyToClipboard('${domain}')">复制</button>
-                </div>
-            `).join('');
+            // 创建结果头部
+            const resultsHeader = document.createElement('div');
+            resultsHeader.className = 'results-header';
             
-            availableList.innerHTML = `
-                <div class="results-header">
-                    <h3>可注册域名 (${availableDomains.length})</h3>
-                    <button class="copy-all-btn" onclick="copyToClipboard('${availableDomains.join('\n')}')">复制全部</button>
-                </div>
-                <div class="domains-container">
-                    ${listHTML}
-                </div>
-            `;
+            const h3 = document.createElement('h3');
+            h3.textContent = `可注册域名 (${availableDomains.length})`;
+            resultsHeader.appendChild(h3);
+            
+            // 创建复制全部按钮
+            const copyAllBtn = document.createElement('button');
+            copyAllBtn.className = 'copy-all-btn';
+            copyAllBtn.textContent = '复制全部';
+            copyAllBtn.addEventListener('click', () => copyToClipboard(availableDomains.join('\n')));
+            resultsHeader.appendChild(copyAllBtn);
+            
+            availableList.appendChild(resultsHeader);
+            
+            // 创建域名容器
+            const domainsContainer = document.createElement('div');
+            domainsContainer.className = 'domains-container';
+            
+            // 添加每个域名
+            availableDomains.forEach(domain => {
+                const domainItem = document.createElement('div');
+                domainItem.className = 'domain-item';
+                
+                const domainName = document.createElement('span');
+                domainName.className = 'domain-name';
+                domainName.textContent = domain;
+                domainItem.appendChild(domainName);
+                
+                const status = document.createElement('span');
+                status.className = 'status available';
+                status.textContent = '可注册';
+                domainItem.appendChild(status);
+                
+                const copyBtn = document.createElement('button');
+                copyBtn.className = 'copy-btn';
+                copyBtn.textContent = '复制';
+                copyBtn.addEventListener('click', () => copyToClipboard(domain));
+                domainItem.appendChild(copyBtn);
+                
+                domainsContainer.appendChild(domainItem);
+            });
+            
+            availableList.appendChild(domainsContainer);
+        }
+        
+        // 更新统计信息
+        const availableDiv = document.getElementById('availableDomains');
+        const h3 = availableDiv.querySelector('h3');
+        if (h3) {
+            h3.textContent = `可注册的域名 (${availableDomains.length}个)`;
         }
         
         // 显示错误域名
         if (errorDomains.length > 0) {
-            const errorHTML = errorDomains.map(item => `
-                <div class="domain-item error">
-                    <span class="domain-name">${item.domain}</span>
-                    <span class="status error">${item.error}</span>
-                </div>
-            `).join('');
-            
             // 创建错误列表容器
             let errorContainer = document.getElementById('errorDomains');
             if (!errorContainer) {
                 errorContainer = document.createElement('div');
                 errorContainer.id = 'errorDomains';
                 errorContainer.className = 'tab-content';
-                document.querySelector('.tab-contents').appendChild(errorContainer);
+                document.querySelector('.tab-container').appendChild(errorContainer);
                 
                 // 添加错误标签
                 const errorTab = document.createElement('button');
-                errorTab.className = 'tab-button';
+                errorTab.className = 'tab';
+                errorTab.setAttribute('data-tab', 'errorDomains');
                 errorTab.textContent = `错误域名 (${errorDomains.length})`;
-                errorTab.onclick = () => switchToTab('errorDomains');
-                document.querySelector('.tab-buttons').appendChild(errorTab);
+                errorTab.addEventListener('click', () => {
+                    // 移除所有选项卡的活动状态
+                    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                    document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+                    
+                    // 添加当前选项卡的活动状态
+                    errorTab.classList.add('active');
+                    errorContainer.classList.add('active');
+                });
+                document.querySelector('.tabs').appendChild(errorTab);
+            } else {
+                // 更新错误标签文本
+                const errorTab = document.querySelector(`.tab[data-tab="errorDomains"]`);
+                if (errorTab) {
+                    errorTab.textContent = `错误域名 (${errorDomains.length})`;
+                }
             }
             
-            errorContainer.innerHTML = `
-                <div class="results-header">
-                    <h3>查询出错的域名 (${errorDomains.length})</h3>
-                </div>
-                <div class="domains-container error-list">
-                    ${errorHTML}
-                </div>
-            `;
+            // 清空错误容器
+            errorContainer.innerHTML = '';
+            
+            // 创建错误结果头部
+            const errorHeader = document.createElement('div');
+            errorHeader.className = 'results-header';
+            const errorH3 = document.createElement('h3');
+            errorH3.textContent = `查询出错的域名 (${errorDomains.length})`;
+            errorHeader.appendChild(errorH3);
+            errorContainer.appendChild(errorHeader);
+            
+            // 创建错误列表
+            const errorList = document.createElement('div');
+            errorList.className = 'domains-container error-list';
+            
+            // 添加每个错误域名
+            errorDomains.forEach(item => {
+                const domainItem = document.createElement('div');
+                domainItem.className = 'domain-item error';
+                
+                const domainName = document.createElement('span');
+                domainName.className = 'domain-name';
+                domainName.textContent = item.domain;
+                domainItem.appendChild(domainName);
+                
+                const status = document.createElement('span');
+                status.className = 'status error';
+                status.textContent = item.error;
+                domainItem.appendChild(status);
+                
+                errorList.appendChild(domainItem);
+            });
+            
+            errorContainer.appendChild(errorList);
         }
-        
-        // 更新统计信息
-        const availableDiv = document.getElementById('availableDomains');
-        const h3 = availableDiv.querySelector('h3');
-        h3.textContent = `可注册的域名 (${availableDomains.length}个)`;
     }
+
     
     // 创建错误提示模态框
     function createErrorModal() {
@@ -539,8 +646,22 @@ document.addEventListener('DOMContentLoaded', function() {
         queryButton.disabled = false;
     }
     
-    // 复制文本到剪贴板
+    // 复制文本到剪贴板 - 安全处理
     function copyToClipboard(text) {
+        // 输入验证：确保text是字符串类型
+        if (typeof text !== 'string') {
+            console.error('Invalid input for copyToClipboard:', text);
+            showError('复制失败：无效输入');
+            return;
+        }
+        
+        // 防止超长文本复制
+        const maxCopyLength = 10000;
+        if (text.length > maxCopyLength) {
+            showError('复制失败：文本过长');
+            return;
+        }
+        
         navigator.clipboard.writeText(text)
             .then(() => {
                 // 添加临时提示
@@ -554,8 +675,33 @@ document.addEventListener('DOMContentLoaded', function() {
                 }, 2000);
             })
             .catch(err => {
-                console.error('复制失败:', err);
-                showError('复制失败，请手动选择复制');
+                // 降级方案：使用textarea
+                const textarea = document.createElement('textarea');
+                textarea.value = text; // 使用.value属性设置文本，避免XSS
+                textarea.style.position = 'fixed'; // 避免滚动到页面底部
+                textarea.style.opacity = '0';
+                textarea.style.pointerEvents = 'none';
+                document.body.appendChild(textarea);
+                textarea.focus();
+                textarea.select();
+                
+                try {
+                    document.execCommand('copy');
+                    // 添加临时提示
+                    const notification = document.createElement('div');
+                    notification.className = 'copy-notification';
+                    notification.textContent = '已复制到剪贴板';
+                    document.body.appendChild(notification);
+                    
+                    setTimeout(() => {
+                        notification.remove();
+                    }, 2000);
+                } catch (err) {
+                    console.error('Copy failed:', err);
+                    showError('复制失败，请手动选择复制');
+                } finally {
+                    document.body.removeChild(textarea);
+                }
             });
     }
     

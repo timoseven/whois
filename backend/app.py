@@ -4,15 +4,54 @@ import whois
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor
+from flask_talisman import Talisman
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 # 创建Flask应用
 app = Flask(__name__, static_folder='../frontend', static_url_path='/whois')
+
+# 配置安全头
+csp = {
+    'default-src': ['\'self\''],
+    'script-src': ['\'self\''],
+    'style-src': ['\'self\'', '\'unsafe-inline\''],
+    'img-src': ['\'self\''],
+}
+
+# 在开发环境中禁用HTTPS重定向
+Talisman(app, 
+         content_security_policy=csp,
+         force_https=False)
+
+# 配置请求速率限制
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=["100 per day", "20 per hour"],
+    storage_uri="memory://",
+)
+
 # 不需要CORS，因为前后端在同一端口
 
-# 简单的域名格式验证
+# 增强的域名格式验证
 def is_valid_domain(domain):
+    # 基本格式验证
     pattern = r'^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$'
-    return bool(re.match(pattern, domain))
+    if not bool(re.match(pattern, domain)):
+        return False
+    
+    # 验证域名长度符合RFC标准
+    if len(domain) > 253:
+        return False
+    
+    # 验证每个标签长度不超过63个字符
+    labels = domain.split('.')
+    for label in labels:
+        if len(label) > 63:
+            return False
+    
+    return True
 
 # 检查域名是否可注册
 def check_domain_availability(domain):
@@ -89,10 +128,12 @@ def whois_query():
         except Exception as e:
             # 尝试直接检查可用性
             available = check_domain_availability(domain)
-            return jsonify({'error': f'WHOIS查询失败: {str(e)}', 'available': available}), 500
+            # 不暴露敏感错误信息给用户
+            return jsonify({'error': 'WHOIS查询失败，请稍后重试', 'available': available}), 500
             
     except Exception as e:
-        return jsonify({'error': f'服务器错误: {str(e)}'}), 500
+        # 不暴露敏感错误信息给用户
+        return jsonify({'error': '服务器错误，请稍后重试'}), 500
 
 # 批量WHOIS查询API端点
 @app.route('/whois/api/whois-batch', methods=['POST'])
@@ -113,7 +154,7 @@ def whois_batch_query():
         # 验证每个域名的格式
         for domain in domains:
             if not isinstance(domain, str) or not is_valid_domain(domain.strip()):
-                return jsonify({'error': f'无效的域名格式: {domain}'}), 400
+                return jsonify({'error': '无效的域名格式'}), 400
         
         # 执行批量查询
         results = {}
@@ -132,13 +173,14 @@ def whois_batch_query():
                     available = future.result()
                     results[domain] = {'available': available}
                 except Exception as e:
-                    # 如果单个域名查询失败，设置为False（保守处理）
-                    results[domain] = {'available': False, 'error': str(e)}
+                    # 如果单个域名查询失败，设置为False（保守处理），不暴露具体错误
+                    results[domain] = {'available': False, 'error': '查询失败'}
         
         return jsonify(results)
         
     except Exception as e:
-        return jsonify({'error': f'服务器错误: {str(e)}'}), 500
+        # 不暴露敏感错误信息给用户
+        return jsonify({'error': '服务器错误，请稍后重试'}), 500
 
 # 格式化WHOIS结果
 def format_whois_result(whois_data):
@@ -210,4 +252,5 @@ def root():
 if __name__ == '__main__':
     # 使用8000端口作为统一访问端口
     print("服务启动在: http://localhost:8000/whois")
-    app.run(debug=True, host='0.0.0.0', port=8000)
+    # 生产环境禁用debug模式
+    app.run(debug=False, host='0.0.0.0', port=8000)

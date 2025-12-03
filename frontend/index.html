@@ -3,6 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-XSS-Protection" content="1; mode=block">
+    <meta http-equiv="X-Content-Type-Options" content="nosniff">
+    <meta http-equiv="Referrer-Policy" content="strict-origin-when-cross-origin">
     <title>批量WHOIS查询工具</title>
     <style>
         body {
@@ -159,6 +162,10 @@
             border: 1px solid #ddd;
             font-family: 'Courier New', monospace;
             font-size: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
         }
         .available {
             background: #e8f5e9;
@@ -167,6 +174,79 @@
         .unavailable {
             background: #ffebee;
             border-color: #f44336;
+        }
+        .error {
+            background: #ffebee;
+            border-color: #f44336;
+            color: #c62828;
+        }
+        .domain-name {
+            font-weight: 500;
+            flex-grow: 1;
+        }
+        .status {
+            font-size: 12px;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-weight: 500;
+        }
+        .status.available {
+            background: #4CAF50;
+            color: white;
+        }
+        .status.unavailable {
+            background: #f44336;
+            color: white;
+        }
+        .status.error {
+            background: #c62828;
+            color: white;
+        }
+        .copy-btn {
+            padding: 4px 8px;
+            background: #2196F3;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .copy-btn:hover {
+            background: #1976D2;
+        }
+        .copy-all-btn {
+            float: right;
+            padding: 6px 12px;
+            background: #2196F3;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .copy-all-btn:hover {
+            background: #1976D2;
+        }
+        .results-header {
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #eee;
+        }
+        .domains-container {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .error-list {
+            background: #ffebee;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+        .no-results {
+            text-align: center;
+            color: #666;
+            padding: 20px;
         }
         .tab-container {
             margin-bottom: 20px;
