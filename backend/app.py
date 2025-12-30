@@ -198,26 +198,38 @@ def custom_whois_query(domain, whois_server=None, max_retries=3, timeout=10):
     """
     import logging
     
-    # 设置日志级别为DEBUG，获取更详细的日志信息
-    logging.basicConfig(level=logging.DEBUG)
     logging.info(f"开始查询域名: {domain}, 使用服务器: {whois_server or 'auto'}")
     
     # 如果用户指定了服务器，优先使用
     if whois_server and whois_server != 'auto':
         servers = [whois_server]
+        logging.debug(f"用户指定了WHOIS服务器，将只使用: {whois_server}")
     else:
         # 提取TLD
         tld = domain.split('.')[-1].lower()
         # 获取该TLD对应的WHOIS服务器列表
         servers = WHOIS_SERVERS.get(tld, WHOIS_SERVERS['default'])
+        logging.debug(f"根据TLD '{tld}'选择的WHOIS服务器列表: {servers}")
         
         # 打乱服务器顺序，避免总是从同一个服务器开始查询
         random.shuffle(servers)
+        logging.debug(f"打乱后的WHOIS服务器列表: {servers}")
     
-    # 尝试不同的服务器
-    for server in servers:
+    logging.debug(f"最终使用的WHOIS服务器列表: {servers}")
+    
+    # 准备尝试的服务器列表，每个服务器可能会被尝试多次
+    # 如果用户指定了单个服务器，我们只使用该服务器进行所有重试
+    if len(servers) == 1:
+        # 单个服务器情况：在同一服务器上重试
+        server = servers[0]
         for attempt in range(max_retries):
             try:
+                # 指数退避策略
+                retry_delay = min(1 * (2 ** attempt), 8)  # 1s, 2s, 4s, 8s...
+                if attempt > 0:
+                    logging.debug(f"查询 {domain} 时服务器 {server} 第 {attempt+1}/{max_retries} 次尝试，等待 {retry_delay}s")
+                    time.sleep(retry_delay)
+                
                 # 创建socket连接
                 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 s.settimeout(timeout)
@@ -239,30 +251,121 @@ def custom_whois_query(domain, whois_server=None, max_retries=3, timeout=10):
                 
                 # 检查响应是否为空
                 if not response:
-                    logging.warning(f"查询 {domain} 时服务器 {server} 返回空响应")
-                    break
+                    logging.warning(f"查询 {domain} 时服务器 {server} 返回空响应 (尝试 {attempt+1}/{max_retries})")
+                    continue
+                
+                # 检查响应是否包含错误信息
+                response_str = response.decode('utf-8', 'replace')
+                if any(error_keyword in response_str.lower() for error_keyword in [
+                    'error', 'failed', 'limit exceeded', 'too many requests',
+                    'blocked', 'access denied', 'permission denied'
+                ]):
+                    logging.warning(f"查询 {domain} 时服务器 {server} 返回错误响应: {response_str[:100]}... (尝试 {attempt+1}/{max_retries})")
+                    continue
                 
                 # 返回解析后的结果
-                response_str = response.decode('utf-8', 'replace')
-                return whois.parser.WhoisEntry.load(domain, response_str)
+                try:
+                    return whois.parser.WhoisEntry.load(domain, response_str)
+                except Exception as parse_error:
+                    logging.warning(f"查询 {domain} 时解析服务器 {server} 的响应失败: {parse_error} (尝试 {attempt+1}/{max_retries})")
+                    # 解析失败继续尝试
+                    continue
             except socket.timeout:
                 logging.warning(f"查询 {domain} 时服务器 {server} 超时 (尝试 {attempt+1}/{max_retries})")
                 if s:
                     s.close()
-                # 超时后继续尝试下一次或下一个服务器
+                # 超时后继续尝试下一次
             except socket.error as e:
-                logging.warning(f"查询 {domain} 时服务器 {server} 连接失败: {e} (尝试 {attempt+1}/{max_retries})")
+                error_msg = str(e).lower()
+                if 'connection refused' in error_msg:
+                    logging.warning(f"查询 {domain} 时服务器 {server} 拒绝连接 (尝试 {attempt+1}/{max_retries})")
+                elif 'network is unreachable' in error_msg:
+                    logging.warning(f"查询 {domain} 时网络不可达 (尝试 {attempt+1}/{max_retries})")
+                else:
+                    logging.warning(f"查询 {domain} 时服务器 {server} 连接失败: {e} (尝试 {attempt+1}/{max_retries})")
                 if s:
                     s.close()
-                # 连接错误后继续尝试下一次或下一个服务器
             except Exception as e:
                 logging.warning(f"查询 {domain} 时服务器 {server} 发生未知错误: {e} (尝试 {attempt+1}/{max_retries})")
                 if s:
                     s.close()
-                # 其他错误后继续尝试下一次或下一个服务器
-            # 增加短暂延迟避免请求过于频繁
-            time.sleep(0.5)
-        # 所有重试都失败，尝试下一个服务器
+    else:
+        # 多个服务器情况：每次重试尝试不同的服务器
+        total_attempts = len(servers) * max_retries
+        attempt_count = 0
+        
+        while attempt_count < total_attempts:
+            # 计算当前应该使用的服务器索引
+            server_index = attempt_count % len(servers)
+            server = servers[server_index]
+            attempt_count += 1
+            
+            try:
+                # 指数退避策略
+                retry_delay = min(1 * (2 ** ((attempt_count - 1) // len(servers))), 8)  # 1s, 2s, 4s, 8s...
+                if attempt_count > 1:
+                    logging.debug(f"查询 {domain} 时服务器 {server} 第 {attempt_count}/{total_attempts} 次尝试，等待 {retry_delay}s")
+                    time.sleep(retry_delay)
+                
+                # 创建socket连接
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.settimeout(timeout)
+                s.connect((server, 43))
+                
+                # 发送查询请求
+                s.send(f"{domain}\r\n".encode())
+                
+                # 接收响应
+                response = b""
+                while True:
+                    data = s.recv(4096)
+                    if not data:
+                        break
+                    response += data
+                
+                # 确保socket正确关闭
+                s.close()
+                
+                # 检查响应是否为空
+                if not response:
+                    logging.warning(f"查询 {domain} 时服务器 {server} 返回空响应 (尝试 {attempt_count}/{total_attempts})")
+                    continue
+                
+                # 检查响应是否包含错误信息
+                response_str = response.decode('utf-8', 'replace')
+                if any(error_keyword in response_str.lower() for error_keyword in [
+                    'error', 'failed', 'limit exceeded', 'too many requests',
+                    'blocked', 'access denied', 'permission denied'
+                ]):
+                    logging.warning(f"查询 {domain} 时服务器 {server} 返回错误响应: {response_str[:100]}... (尝试 {attempt_count}/{total_attempts})")
+                    continue
+                
+                # 返回解析后的结果
+                try:
+                    return whois.parser.WhoisEntry.load(domain, response_str)
+                except Exception as parse_error:
+                    logging.warning(f"查询 {domain} 时解析服务器 {server} 的响应失败: {parse_error} (尝试 {attempt_count}/{total_attempts})")
+                    # 解析失败继续尝试
+                    continue
+            except socket.timeout:
+                logging.warning(f"查询 {domain} 时服务器 {server} 超时 (尝试 {attempt_count}/{total_attempts})")
+                if s:
+                    s.close()
+                # 超时后尝试下一个服务器
+            except socket.error as e:
+                error_msg = str(e).lower()
+                if 'connection refused' in error_msg:
+                    logging.warning(f"查询 {domain} 时服务器 {server} 拒绝连接 (尝试 {attempt_count}/{total_attempts})")
+                elif 'network is unreachable' in error_msg:
+                    logging.warning(f"查询 {domain} 时网络不可达 (尝试 {attempt_count}/{total_attempts})")
+                else:
+                    logging.warning(f"查询 {domain} 时服务器 {server} 连接失败: {e} (尝试 {attempt_count}/{total_attempts})")
+                if s:
+                    s.close()
+            except Exception as e:
+                logging.warning(f"查询 {domain} 时服务器 {server} 发生未知错误: {e} (尝试 {attempt_count}/{total_attempts})")
+                if s:
+                    s.close()
     
     # 所有服务器都尝试失败，使用默认的whois库作为最后的尝试
     logging.warning(f"所有自定义服务器查询 {domain} 失败，尝试使用默认whois库")
@@ -376,6 +479,7 @@ def whois_query():
         
         # 获取用户选择的WHOIS服务器（如果有）
         whois_server = data.get('whois_server', 'auto')
+        logging.debug(f"接收到的WHOIS服务器参数: {whois_server}")
         
         # 验证域名格式
         if not is_valid_domain(domain):
@@ -413,6 +517,7 @@ def whois_batch_query():
         
         # 获取用户选择的WHOIS服务器（如果有）
         whois_server = data.get('whois_server', 'auto')
+        logging.debug(f"接收到的批量查询WHOIS服务器参数: {whois_server}")
         
         # 验证域名数量限制
         if len(domains) > 100:
