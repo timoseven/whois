@@ -9,6 +9,13 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 import socket
 import random
+import logging
+
+# 配置全局日志
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - %(name)s - %(message)s'
+)
 
 # 创建Flask应用
 app = Flask(__name__, static_folder='../frontend', static_url_path='/whois')
@@ -191,6 +198,10 @@ def custom_whois_query(domain, whois_server=None, max_retries=3, timeout=10):
     """
     import logging
     
+    # 设置日志级别为DEBUG，获取更详细的日志信息
+    logging.basicConfig(level=logging.DEBUG)
+    logging.info(f"开始查询域名: {domain}, 使用服务器: {whois_server or 'auto'}")
+    
     # 如果用户指定了服务器，优先使用
     if whois_server and whois_server != 'auto':
         servers = [whois_server]
@@ -264,49 +275,91 @@ def custom_whois_query(domain, whois_server=None, max_retries=3, timeout=10):
 # 检查域名是否可注册
 def check_domain_availability(domain, whois_server=None):
     try:
+        import logging
         # 执行WHOIS查询（使用自定义多服务器查询函数）
         w = custom_whois_query(domain, whois_server=whois_server)
         
-        # 判断域名是否可注册的逻辑
-        # 1. 检查是否有域名名称 (有些未注册的域名会返回空的domain_name)
-        if not w.domain_name:
-            return True
+        logging.debug(f"检查域名 {domain} 可用性，使用服务器 {whois_server}")
+        logging.debug(f"WHOIS结果对象: {type(w)}, 包含domain_name: {hasattr(w, 'domain_name') and w.domain_name}")
         
-        # 2. 检查是否有注册商信息
-        if not w.registrar:
-            return True
+        # 首先检查原始文本内容，这是最可靠的
+        if hasattr(w, 'text') and isinstance(w.text, list):
+            text_content = '\n'.join(w.text).lower()
+            # 检查是否包含未注册的关键词
+            if any(keyword in text_content for keyword in [
+                'not found', 'no match', 'no data found', 'available', 
+                'does not exist', 'not registered', 'invalid domain',
+                'no such domain', 'domain not found', 'not registered'
+            ]):
+                logging.debug(f"域名 {domain} 未注册: 在原始文本中找到未注册关键词")
+                return True
+            # 检查是否包含已注册的关键词
+            if any(keyword in text_content for keyword in [
+                'registered', 'domain name:', 'registrar:', 'creation date:',
+                'expiration date:', 'status:', 'name servers:'
+            ]):
+                logging.debug(f"域名 {domain} 已注册: 在原始文本中找到已注册关键词")
+                return False
         
-        # 3. 检查是否有创建日期
-        if not w.creation_date:
-            return True
+        # 针对不同WHOIS服务器的特殊处理
+        if whois_server and 'iana.org' in whois_server:
+            # IANA服务器返回非常简洁的信息，通常只包含"domain: EXAMPLE.COM"表示已注册
+            if hasattr(w, 'text') and isinstance(w.text, list):
+                text_content = '\n'.join(w.text)
+                if domain.lower() in text_content.lower() and 'domain:' in text_content.lower():
+                    logging.debug(f"域名 {domain} 已注册: IANA服务器返回了域名信息")
+                    return False
         
-        # 4. 检查状态信息，有些未注册的域名可能返回特定状态
+        # 传统的字段检查，作为补充
+        has_registration_info = False
+        
+        # 检查域名名称
+        if hasattr(w, 'domain_name') and w.domain_name:
+            has_registration_info = True
+            logging.debug(f"找到域名名称: {w.domain_name}")
+        
+        # 检查注册商信息
+        if hasattr(w, 'registrar') and w.registrar:
+            has_registration_info = True
+            logging.debug(f"找到注册商: {w.registrar}")
+        
+        # 检查创建日期
+        if hasattr(w, 'creation_date') and w.creation_date:
+            has_registration_info = True
+            logging.debug(f"找到创建日期: {w.creation_date}")
+        
+        # 检查状态信息
         if hasattr(w, 'status') and w.status:
-            # 某些状态可能表明域名未注册或可重新注册
             status_str = str(w.status).lower()
             if any(keyword in status_str for keyword in ['available', 'not found', 'no match']):
+                logging.debug(f"域名 {domain} 未注册: 状态包含未注册关键词")
                 return True
+            has_registration_info = True
+            logging.debug(f"找到状态信息: {w.status}")
         
-        # 5. 检查是否有多个不同的结果（有时会有多个WHOIS服务器返回结果）
-        if isinstance(w.domain_name, list):
-            # 如果列表中的所有元素都相同，可能是重复的结果
-            if all(d == w.domain_name[0] for d in w.domain_name):
-                return False
-            # 否则可能是未找到有效信息
-            return True
+        # 如果有任何注册信息，认为域名已注册
+        if has_registration_info:
+            logging.debug(f"域名 {domain} 已注册: 找到注册信息")
+            return False
         
-        # 默认认为已注册
+        # 如果没有任何注册信息，保守处理为已注册
+        logging.debug(f"域名 {domain} 状态不确定: 没有找到足够的注册信息，保守处理为已注册")
         return False
     except Exception as e:
         # 捕获异常，可能是域名未注册或其他错误
+        import logging
+        logging.debug(f"检查域名 {domain} 可用性时发生异常: {e}")
         # 常见的未注册域名异常消息通常包含特定关键词
         error_msg = str(e).lower()
         if any(keyword in error_msg for keyword in [
             'not found', 'no match', 'no data found', 'available', 
-            'does not exist', 'not registered', 'invalid domain'
+            'does not exist', 'not registered', 'invalid domain',
+            'no such domain', 'domain not found'
         ]):
+            logging.debug(f"域名 {domain} 未注册: 异常消息包含未注册关键词")
             return True
         # 其他异常可能是网络错误或服务器问题，默认返回False（保守处理）
+        logging.debug(f"域名 {domain} 状态不确定: 发生异常且不包含未注册关键词，保守处理为已注册")
         return False
 
 # WHOIS查询API端点（单个域名）
