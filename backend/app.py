@@ -181,22 +181,27 @@ WHOIS_SERVERS = {
 }
 
 # 自定义WHOIS查询函数，支持多服务器重试
-def custom_whois_query(domain, max_retries=3, timeout=10):
+def custom_whois_query(domain, whois_server=None, max_retries=3, timeout=10):
     """
     自定义WHOIS查询函数，支持多服务器重试
     domain: 要查询的域名
+    whois_server: 用户指定的WHOIS服务器（可选）
     max_retries: 最大重试次数
     timeout: 超时时间（秒）
     """
     import logging
     
-    # 提取TLD
-    tld = domain.split('.')[-1].lower()
-    # 获取该TLD对应的WHOIS服务器列表
-    servers = WHOIS_SERVERS.get(tld, WHOIS_SERVERS['default'])
-    
-    # 打乱服务器顺序，避免总是从同一个服务器开始查询
-    random.shuffle(servers)
+    # 如果用户指定了服务器，优先使用
+    if whois_server and whois_server != 'auto':
+        servers = [whois_server]
+    else:
+        # 提取TLD
+        tld = domain.split('.')[-1].lower()
+        # 获取该TLD对应的WHOIS服务器列表
+        servers = WHOIS_SERVERS.get(tld, WHOIS_SERVERS['default'])
+        
+        # 打乱服务器顺序，避免总是从同一个服务器开始查询
+        random.shuffle(servers)
     
     # 尝试不同的服务器
     for server in servers:
@@ -257,10 +262,10 @@ def custom_whois_query(domain, max_retries=3, timeout=10):
         raise e
 
 # 检查域名是否可注册
-def check_domain_availability(domain):
+def check_domain_availability(domain, whois_server=None):
     try:
         # 执行WHOIS查询（使用自定义多服务器查询函数）
-        w = custom_whois_query(domain)
+        w = custom_whois_query(domain, whois_server=whois_server)
         
         # 判断域名是否可注册的逻辑
         # 1. 检查是否有域名名称 (有些未注册的域名会返回空的domain_name)
@@ -316,21 +321,24 @@ def whois_query():
         
         domain = data['domain'].strip()
         
+        # 获取用户选择的WHOIS服务器（如果有）
+        whois_server = data.get('whois_server', 'auto')
+        
         # 验证域名格式
         if not is_valid_domain(domain):
             return jsonify({'error': '无效的域名格式'}), 400
         
         # 执行WHOIS查询（使用自定义多服务器查询函数）
         try:
-            w = custom_whois_query(domain)
+            w = custom_whois_query(domain, whois_server=whois_server)
             # 将结果转换为字符串格式
             whois_result = format_whois_result(w)
             # 同时检查是否可注册
-            available = check_domain_availability(domain)
+            available = check_domain_availability(domain, whois_server=whois_server)
             return jsonify({'whois_data': whois_result, 'available': available})
         except Exception as e:
             # 尝试直接检查可用性
-            available = check_domain_availability(domain)
+            available = check_domain_availability(domain, whois_server=whois_server)
             # 不暴露敏感错误信息给用户
             return jsonify({'error': 'WHOIS查询失败，请稍后重试', 'available': available}), 500
             
@@ -350,6 +358,9 @@ def whois_batch_query():
         
         domains = data['domains']
         
+        # 获取用户选择的WHOIS服务器（如果有）
+        whois_server = data.get('whois_server', 'auto')
+        
         # 验证域名数量限制
         if len(domains) > 100:
             return jsonify({'error': '单次查询域名数量不能超过100个'}), 400
@@ -365,7 +376,7 @@ def whois_batch_query():
         # 使用线程池并发查询
         with ThreadPoolExecutor(max_workers=10) as executor:
             # 提交所有查询任务
-            future_to_domain = {executor.submit(check_domain_availability, domain.strip()): domain for domain in domains}
+            future_to_domain = {executor.submit(check_domain_availability, domain.strip(), whois_server=whois_server): domain for domain in domains}
             
             # 收集结果
             for future in future_to_domain:

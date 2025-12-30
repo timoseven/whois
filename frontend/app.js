@@ -4,6 +4,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const combinationType = document.getElementById('combinationType');
     const combinationPosition = document.getElementById('combinationPosition');
     const combinationLength = document.getElementById('combinationLength');
+    const whoisServer = document.getElementById('whoisServer');
     const generateButton = document.getElementById('generateButton');
     const queryButton = document.getElementById('queryButton');
     const loadingIndicator = document.getElementById('loadingIndicator');
@@ -296,7 +297,10 @@ document.addEventListener('DOMContentLoaded', function() {
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ domains: domains })
+            body: JSON.stringify({ 
+                domains: domains, 
+                whois_server: whoisServer.value 
+            })
         });
         
         if (!response.ok) {
