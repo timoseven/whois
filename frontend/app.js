@@ -386,6 +386,27 @@ document.addEventListener('DOMContentLoaded', function() {
             statusDiv.textContent = statusText;
             resultContent.appendChild(statusDiv);
             
+            // 添加注册时间和过期时间（仅当域名已注册且有这些信息时）
+            if (!result.available && !result.error) {
+                if (result.creation_date) {
+                    const creationDateDiv = document.createElement('div');
+                    creationDateDiv.className = 'domain-date creation-date';
+                    // 格式化日期
+                    const creationDate = new Date(result.creation_date);
+                    creationDateDiv.textContent = `注册时间: ${creationDate.toLocaleDateString()}`;
+                    resultContent.appendChild(creationDateDiv);
+                }
+                
+                if (result.expiration_date) {
+                    const expirationDateDiv = document.createElement('div');
+                    expirationDateDiv.className = 'domain-date expiration-date';
+                    // 格式化日期
+                    const expirationDate = new Date(result.expiration_date);
+                    expirationDateDiv.textContent = `过期时间: ${expirationDate.toLocaleDateString()}`;
+                    resultContent.appendChild(expirationDateDiv);
+                }
+            }
+            
             resultItem.appendChild(resultContent);
             
             // 如果是可注册域名，添加复制按钮

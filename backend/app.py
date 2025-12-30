@@ -375,15 +375,22 @@ def custom_whois_query(domain, whois_server=None, max_retries=3, timeout=10):
         logging.error(f"默认whois库查询 {domain} 也失败: {e}")
         raise e
 
-# 检查域名是否可注册
-def check_domain_availability(domain, whois_server=None):
+# 获取域名完整信息（可用性、注册时间、过期时间等）
+def get_domain_info(domain, whois_server=None):
     try:
         import logging
         # 执行WHOIS查询（使用自定义多服务器查询函数）
         w = custom_whois_query(domain, whois_server=whois_server)
         
-        logging.debug(f"检查域名 {domain} 可用性，使用服务器 {whois_server}")
+        logging.debug(f"查询域名 {domain} 完整信息，使用服务器 {whois_server}")
         logging.debug(f"WHOIS结果对象: {type(w)}, 包含domain_name: {hasattr(w, 'domain_name') and w.domain_name}")
+        
+        # 初始化结果
+        result = {
+            'available': True,
+            'creation_date': None,
+            'expiration_date': None
+        }
         
         # 首先检查原始文本内容，这是最可靠的
         if hasattr(w, 'text') and isinstance(w.text, list):
@@ -395,14 +402,13 @@ def check_domain_availability(domain, whois_server=None):
                 'no such domain', 'domain not found', 'not registered'
             ]):
                 logging.debug(f"域名 {domain} 未注册: 在原始文本中找到未注册关键词")
-                return True
+                return result
             # 检查是否包含已注册的关键词
             if any(keyword in text_content for keyword in [
                 'registered', 'domain name:', 'registrar:', 'creation date:',
                 'expiration date:', 'status:', 'name servers:'
             ]):
-                logging.debug(f"域名 {domain} 已注册: 在原始文本中找到已注册关键词")
-                return False
+                result['available'] = False
         
         # 针对不同WHOIS服务器的特殊处理
         if whois_server and 'iana.org' in whois_server:
@@ -411,7 +417,7 @@ def check_domain_availability(domain, whois_server=None):
                 text_content = '\n'.join(w.text)
                 if domain.lower() in text_content.lower() and 'domain:' in text_content.lower():
                     logging.debug(f"域名 {domain} 已注册: IANA服务器返回了域名信息")
-                    return False
+                    result['available'] = False
         
         # 传统的字段检查，作为补充
         has_registration_info = False
@@ -429,29 +435,39 @@ def check_domain_availability(domain, whois_server=None):
         # 检查创建日期
         if hasattr(w, 'creation_date') and w.creation_date:
             has_registration_info = True
+            result['creation_date'] = w.creation_date
             logging.debug(f"找到创建日期: {w.creation_date}")
+        
+        # 检查过期日期
+        if hasattr(w, 'expiration_date') and w.expiration_date:
+            has_registration_info = True
+            result['expiration_date'] = w.expiration_date
+            logging.debug(f"找到过期日期: {w.expiration_date}")
         
         # 检查状态信息
         if hasattr(w, 'status') and w.status:
             status_str = str(w.status).lower()
             if any(keyword in status_str for keyword in ['available', 'not found', 'no match']):
                 logging.debug(f"域名 {domain} 未注册: 状态包含未注册关键词")
-                return True
+                result['available'] = True
+                return result
             has_registration_info = True
             logging.debug(f"找到状态信息: {w.status}")
         
         # 如果有任何注册信息，认为域名已注册
         if has_registration_info:
             logging.debug(f"域名 {domain} 已注册: 找到注册信息")
-            return False
+            result['available'] = False
         
         # 如果没有任何注册信息，保守处理为已注册
-        logging.debug(f"域名 {domain} 状态不确定: 没有找到足够的注册信息，保守处理为已注册")
-        return False
+        if not result['available'] and (result['creation_date'] is None or result['expiration_date'] is None):
+            logging.debug(f"域名 {domain} 已注册但缺少日期信息")
+        
+        return result
     except Exception as e:
         # 捕获异常，可能是域名未注册或其他错误
         import logging
-        logging.debug(f"检查域名 {domain} 可用性时发生异常: {e}")
+        logging.debug(f"查询域名 {domain} 信息时发生异常: {e}")
         # 常见的未注册域名异常消息通常包含特定关键词
         error_msg = str(e).lower()
         if any(keyword in error_msg for keyword in [
@@ -460,10 +476,16 @@ def check_domain_availability(domain, whois_server=None):
             'no such domain', 'domain not found'
         ]):
             logging.debug(f"域名 {domain} 未注册: 异常消息包含未注册关键词")
-            return True
+            return {'available': True, 'creation_date': None, 'expiration_date': None}
         # 其他异常可能是网络错误或服务器问题，默认返回False（保守处理）
         logging.debug(f"域名 {domain} 状态不确定: 发生异常且不包含未注册关键词，保守处理为已注册")
-        return False
+        return {'available': False, 'creation_date': None, 'expiration_date': None}
+
+# 检查域名是否可注册（保持向后兼容）
+def check_domain_availability(domain, whois_server=None):
+    # 调用新的函数并返回可用性状态
+    result = get_domain_info(domain, whois_server)
+    return result['available']
 
 # WHOIS查询API端点（单个域名）
 @app.route('/whois/api/whois', methods=['POST'])
@@ -490,14 +512,24 @@ def whois_query():
             w = custom_whois_query(domain, whois_server=whois_server)
             # 将结果转换为字符串格式
             whois_result = format_whois_result(w)
-            # 同时检查是否可注册
-            available = check_domain_availability(domain, whois_server=whois_server)
-            return jsonify({'whois_data': whois_result, 'available': available})
+            # 获取完整的域名信息
+            domain_info = get_domain_info(domain, whois_server=whois_server)
+            return jsonify({
+                'whois_data': whois_result,
+                'available': domain_info['available'],
+                'creation_date': domain_info['creation_date'],
+                'expiration_date': domain_info['expiration_date']
+            })
         except Exception as e:
             # 尝试直接检查可用性
-            available = check_domain_availability(domain, whois_server=whois_server)
+            domain_info = get_domain_info(domain, whois_server=whois_server)
             # 不暴露敏感错误信息给用户
-            return jsonify({'error': 'WHOIS查询失败，请稍后重试', 'available': available}), 500
+            return jsonify({
+                'error': 'WHOIS查询失败，请稍后重试',
+                'available': domain_info['available'],
+                'creation_date': domain_info['creation_date'],
+                'expiration_date': domain_info['expiration_date']
+            }), 500
             
     except Exception as e:
         # 不暴露敏感错误信息给用户
@@ -534,7 +566,7 @@ def whois_batch_query():
         # 使用线程池并发查询
         with ThreadPoolExecutor(max_workers=10) as executor:
             # 提交所有查询任务
-            future_to_domain = {executor.submit(check_domain_availability, domain.strip(), whois_server=whois_server): domain for domain in domains}
+            future_to_domain = {executor.submit(get_domain_info, domain.strip(), whois_server=whois_server): domain for domain in domains}
             
             # 收集结果
             for future in future_to_domain:
@@ -542,11 +574,11 @@ def whois_batch_query():
                 try:
                     # 添加延迟避免请求过于频繁
                     time.sleep(0.1)
-                    available = future.result()
-                    results[domain] = {'available': available}
+                    domain_info = future.result()
+                    results[domain] = domain_info
                 except Exception as e:
                     # 如果单个域名查询失败，设置为False（保守处理），不暴露具体错误
-                    results[domain] = {'available': False, 'error': '查询失败'}
+                    results[domain] = {'available': False, 'creation_date': None, 'expiration_date': None, 'error': '查询失败'}
         
         return jsonify(results)
         
